@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Mecanizada - Registro de Uso</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+        .info-bar {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 25px;
+            display: none;
+        }
+        .info-item {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .info-item strong {
+            color: #2c3e50;
+        }
+        .texto-container {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            background: #fafafa;
+            display: none;
+        }
+        .texto-header {
+            background: #34495e;
+            color: white;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .texto-content {
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: white;
+            color: #2c3e50;
+            border-radius: 0 0 6px 6px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 200px;
+            justify-content: center;
+        }
+        .btn-primary {
+            background: #27ae60;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #229954;
+            transform: translateY(-1px);
+        }
+        .btn-secondary {
+            background: #7f8c8d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #6c7a7b;
+        }
+        .success-message {
+            background: #d5edda;
+            color: #155724;
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+            border-left: 4px solid #28a745;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+            border-left: 4px solid #dc3545;
+        }
+        @media (max-width: 600px) {
+            .container { margin: 10px; }
+            .content { padding: 20px; }
+            .actions { flex-direction: column; }
+            .btn { min-width: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>GPS MECANIZADA</h1>
+            <p>CONTROLE DE FROTA</p>
+        </div>
+        
+        <div class="content">
+            <div class="loading" id="loading">
+                Carregando dados da última resposta...
+            </div>
+            
+            <div id="conteudoPrincipal" style="display: none;">
+                <div class="info-bar" id="infoBar">
+                    <div class="info-item">
+                        <strong>Placa:</strong> <span id="placaInfo">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Responsável:</strong> <span id="responsavelInfo">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Operação:</strong> <span id="operacaoInfo">-</span>
+                    </div>
+                </div>
+                
+                <div class="texto-container" id="textoContainer">
+                    <div class="texto-header">
+                        MENSAGEM FORMATADA PARA WHATSAPP
+                    </div>
+                    <div class="texto-content" id="textoParaCopiar"></div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="copiarTexto()">
+                        COPIAR MENSAGEM
+                    </button>
+                    
+                    <button class="btn btn-secondary" onclick="atualizarDados()">
+                        ATUALIZAR DADOS
+                    </button>
+                </div>
+                
+                <div id="mensagemSucesso" class="success-message">
+                    MENSAGEM COPIADA! Cole no grupo do WhatsApp com Ctrl+V (ou Cmd+V no Mac)
+                </div>
+                
+                <div id="mensagemErro" class="error-message">
+                    Nenhum dado encontrado. Preencha o formulário primeiro.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // URL do seu Google Apps Script (cole aqui)
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwQJvDzekp_oBkvGGSzwAfxuv30b84GqTXtcBTQF_Ok9AV-plOn2IsDyUyVTyhn0hE/exec';
+        
+        // Função para carregar dados
+        async function carregarDados() {
+            try {
+                console.log('Carregando dados...');
+                
+                const response = await fetch(SCRIPT_URL);
+                const html = await response.text();
+                
+                // Extrai dados do HTML retornado
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Procura pelo texto formatado no HTML
+                const textoElement = doc.getElementById('textoParaCopiar');
+                
+                if (textoElement && textoElement.textContent.trim()) {
+                    // Dados encontrados
+                    const texto = textoElement.textContent.trim();
+                    
+                    // Extrai informações básicas do texto
+                    const linhas = texto.split('\n');
+                    let placa = 'N/I', responsavel = 'N/I', operacao = 'N/I';
+                    
+                    for (const linha of linhas) {
+                        if (linha.includes('PLACA:')) {
+                            placa = linha.split('PLACA:')[1]?.trim() || 'N/I';
+                        }
+                        if (linha.includes('RESPONSAVEL:')) {
+                            responsavel = linha.split('RESPONSAVEL:')[1]?.trim() || 'N/I';
+                        }
+                        if (linha.includes('OPERACAO:')) {
+                            operacao = linha.split('OPERACAO:')[1]?.trim() || 'N/I';
+                        }
+                    }
+                    
+                    // Atualiza interface
+                    document.getElementById('placaInfo').textContent = placa;
+                    document.getElementById('responsavelInfo').textContent = responsavel;
+                    document.getElementById('operacaoInfo').textContent = operacao;
+                    document.getElementById('textoParaCopiar').textContent = texto;
+                    
+                    // Mostra conteúdo
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('conteudoPrincipal').style.display = 'block';
+                    document.getElementById('infoBar').style.display = 'block';
+                    document.getElementById('textoContainer').style.display = 'block';
+                    
+                } else {
+                    // Nenhum dado encontrado
+                    mostrarErro();
+                }
+                
+            } catch (error) {
+                console.error('Erro ao carregar dados:', error);
+                mostrarErro();
+            }
+        }
+        
+        function mostrarErro() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('conteudoPrincipal').style.display = 'block';
+            document.getElementById('mensagemErro').style.display = 'block';
+        }
+        
+        function copiarTexto() {
+            const texto = document.getElementById('textoParaCopiar').textContent;
+            
+            if (!texto || texto.trim() === '') {
+                alert('Nenhum texto para copiar');
+                return;
+            }
+            
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(texto).then(() => {
+                    mostrarSucesso();
+                }).catch(err => {
+                    console.error('Erro ao copiar:', err);
+                    copiarTextoFallback(texto);
+                });
+            } else {
+                copiarTextoFallback(texto);
+            }
+        }
+        
+        function copiarTextoFallback(texto) {
+            const textArea = document.createElement('textarea');
+            textArea.value = texto;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                mostrarSucesso();
+            } catch (err) {
+                alert('Não foi possível copiar automaticamente. Selecione o texto manualmente e pressione Ctrl+C');
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+        
+        function mostrarSucesso() {
+            const mensagem = document.getElementById('mensagemSucesso');
+            mensagem.style.display = 'block';
+            setTimeout(() => {
+                mensagem.style.display = 'none';
+            }, 4000);
+        }
+        
+        function atualizarDados() {
+            window.location.reload();
+        }
+        
+        // Carrega dados quando a página abre
+        document.addEventListener('DOMContentLoaded', carregarDados);
+    </script>
+</body>
+</html>
