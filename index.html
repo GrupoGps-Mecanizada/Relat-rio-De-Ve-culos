@@ -201,60 +201,80 @@
     </div>
 
     <script>
-        // URL do seu Google Apps Script (cole aqui)
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5eBwdRWy4jNGaASAqxjSJncGPd92V5jCrGE88_3u7pFBvTNopyD3bLC7ZE4Kafoo/exec';
+        // URL do seu Google Apps Script
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwQJvDzekp_oBkvGGSzwAfxuv30b84GqTXtcBTQF_Ok9AV-plOn2IsDyUyVTyhn0hE/exec';
         
-        // Função para carregar dados
-        async function carregarDados() {
+        // Função para carregar dados usando JSONP (resolve CORS)
+        function carregarDados() {
             try {
-                console.log('Carregando dados...');
+                console.log('Carregando dados via JSONP...');
                 
-                const response = await fetch(SCRIPT_URL);
-                const html = await response.text();
+                // Remove script anterior se existir
+                const scriptAnterior = document.getElementById('jsonp-script');
+                if (scriptAnterior) {
+                    scriptAnterior.remove();
+                }
                 
-                // Extrai dados do HTML retornado
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
+                // Cria callback único
+                const callbackName = 'jsonpCallback' + Date.now();
                 
-                // Procura pelo texto formatado no HTML
-                const textoElement = doc.getElementById('textoParaCopiar');
-                
-                if (textoElement && textoElement.textContent.trim()) {
-                    // Dados encontrados
-                    const texto = textoElement.textContent.trim();
+                // Define callback global
+                window[callbackName] = function(resposta) {
+                    console.log('Resposta recebida:', resposta);
                     
-                    // Extrai informações básicas do texto
-                    const linhas = texto.split('\n');
-                    let placa = 'N/I', responsavel = 'N/I', operacao = 'N/I';
-                    
-                    for (const linha of linhas) {
-                        if (linha.includes('PLACA:')) {
-                            placa = linha.split('PLACA:')[1]?.trim() || 'N/I';
+                    if (resposta.sucesso && resposta.texto) {
+                        // Dados encontrados
+                        const texto = resposta.texto;
+                        const dados = resposta.dados;
+                        
+                        // Extrai informações básicas
+                        const linhas = texto.split('\n');
+                        let placa = 'N/I', responsavel = 'N/I', operacao = 'N/I';
+                        
+                        for (const linha of linhas) {
+                            if (linha.includes('PLACA:')) {
+                                placa = linha.split('PLACA:')[1]?.trim() || 'N/I';
+                            }
+                            if (linha.includes('RESPONSAVEL:')) {
+                                responsavel = linha.split('RESPONSAVEL:')[1]?.trim() || 'N/I';
+                            }
+                            if (linha.includes('OPERACAO:')) {
+                                operacao = linha.split('OPERACAO:')[1]?.trim() || 'N/I';
+                            }
                         }
-                        if (linha.includes('RESPONSAVEL:')) {
-                            responsavel = linha.split('RESPONSAVEL:')[1]?.trim() || 'N/I';
-                        }
-                        if (linha.includes('OPERACAO:')) {
-                            operacao = linha.split('OPERACAO:')[1]?.trim() || 'N/I';
-                        }
+                        
+                        // Atualiza interface
+                        document.getElementById('placaInfo').textContent = placa;
+                        document.getElementById('responsavelInfo').textContent = responsavel;
+                        document.getElementById('operacaoInfo').textContent = operacao;
+                        document.getElementById('textoParaCopiar').textContent = texto;
+                        
+                        // Mostra conteúdo
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('conteudoPrincipal').style.display = 'block';
+                        document.getElementById('infoBar').style.display = 'block';
+                        document.getElementById('textoContainer').style.display = 'block';
+                        
+                    } else {
+                        // Nenhum dado encontrado
+                        mostrarErro();
                     }
                     
-                    // Atualiza interface
-                    document.getElementById('placaInfo').textContent = placa;
-                    document.getElementById('responsavelInfo').textContent = responsavel;
-                    document.getElementById('operacaoInfo').textContent = operacao;
-                    document.getElementById('textoParaCopiar').textContent = texto;
-                    
-                    // Mostra conteúdo
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('conteudoPrincipal').style.display = 'block';
-                    document.getElementById('infoBar').style.display = 'block';
-                    document.getElementById('textoContainer').style.display = 'block';
-                    
-                } else {
-                    // Nenhum dado encontrado
+                    // Remove callback
+                    delete window[callbackName];
+                };
+                
+                // Cria script JSONP
+                const script = document.createElement('script');
+                script.id = 'jsonp-script';
+                script.src = `${SCRIPT_URL}?callback=${callbackName}&t=${Date.now()}`;
+                script.onerror = function() {
+                    console.error('Erro ao carregar script JSONP');
                     mostrarErro();
-                }
+                    delete window[callbackName];
+                };
+                
+                document.head.appendChild(script);
                 
             } catch (error) {
                 console.error('Erro ao carregar dados:', error);
@@ -317,7 +337,9 @@
         }
         
         function atualizarDados() {
-            window.location.reload();
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('conteudoPrincipal').style.display = 'none';
+            carregarDados();
         }
         
         // Carrega dados quando a página abre
