@@ -276,7 +276,7 @@
         // Detecta se é dispositivo móvel
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Função para carregar dados usando JSONP (resolve CORS)
+        // FUNÇÃO MELHORADA PARA CARREGAR DADOS SEM CACHE
         function carregarDados() {
             try {
                 console.log('Carregando dados via JSONP... Mobile:', isMobile);
@@ -291,8 +291,14 @@
                     scriptAnterior.remove();
                 }
                 
+                // *** CACHE BUSTING MELHORADO ***
+                const now = Date.now();
+                const random = Math.random().toString(36).substr(2, 15);
+                const userAgent = navigator.userAgent.substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+                const cacheBreaker = `${now}_${random}_${userAgent}`;
+                
                 // Cria callback único
-                const callbackName = 'jsonpCallback' + Date.now();
+                const callbackName = 'jsonpCallback' + now + random.substr(0, 5);
                 
                 // Define callback global
                 window[callbackName] = function(resposta) {
@@ -355,17 +361,32 @@
                     
                     // Remove callback
                     delete window[callbackName];
+                    
+                    // Remove script do DOM
+                    const scriptElement = document.getElementById('jsonp-script');
+                    if (scriptElement) {
+                        scriptElement.remove();
+                    }
                 };
+                
+                // *** URL COM MULTIPLE CACHE BUSTERS ***
+                const url = `${SCRIPT_URL}?callback=${callbackName}&t=${cacheBreaker}&_cb=${now}&r=${random}&nocache=${Date.now()}`;
+                
+                console.log('URL de requisição:', url);
                 
                 // Cria script JSONP
                 const script = document.createElement('script');
                 script.id = 'jsonp-script';
-                script.src = `${SCRIPT_URL}?callback=${callbackName}&t=${Date.now()}`;
+                script.src = url;
                 script.onerror = function() {
                     console.error('Erro ao carregar script JSONP');
                     mostrarErro();
                     delete window[callbackName];
                 };
+                
+                // *** FORÇA RELOAD SEM CACHE ***
+                script.setAttribute('crossorigin', 'anonymous');
+                script.setAttribute('cache', 'no-cache');
                 
                 document.head.appendChild(script);
                 
@@ -377,6 +398,10 @@
                         if (window[callbackName]) {
                             delete window[callbackName];
                         }
+                        const scriptElement = document.getElementById('jsonp-script');
+                        if (scriptElement) {
+                            scriptElement.remove();
+                        }
                     }
                 }, 15000); // 15 segundos para mobile
                 
@@ -384,6 +409,32 @@
                 console.error('Erro ao carregar dados:', error);
                 mostrarErro();
             }
+        }
+        
+        // FUNÇÃO PARA LIMPAR CACHE MANUALMENTE (adicionar botão)
+        function limparCacheEAtualizar() {
+            // Limpa possíveis dados em cache do navegador
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    for (let name of names) {
+                        caches.delete(name);
+                    }
+                });
+            }
+            
+            // Force reload completo
+            window.location.reload(true);
+        }
+        
+        // ATUALIZAR DADOS COM CACHE BUSTING
+        function atualizarDados() {
+            document.getElementById('mensagemErro').style.display = 'none';
+            document.getElementById('mensagemSucesso').style.display = 'none';
+            
+            // *** ADICIONA DELAY PARA GARANTIR QUE O CACHE SEJA LIMPO ***
+            setTimeout(() => {
+                carregarDados();
+            }, 100);
         }
         
         function mostrarErro() {
