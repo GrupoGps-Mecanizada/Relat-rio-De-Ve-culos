@@ -1,592 +1,733 @@
-// =====================================================
-// SISTEMA GPS MECANIZADA - VERSÃO CORRIGIDA 2.0
-// Correção do mapeamento de campos e melhorias de cache
-// =====================================================
-
-// CONFIGURAÇÕES
-const CONFIG_CORPORATIVO = {
-  empresaNome: "GPS MECANIZADA",
-  departamento: "CONTROLE DE FROTA"
-};
-
-// =====================================================
-// FUNÇÃO PRINCIPAL - PROCESSA AUTOMATICAMENTE
-// =====================================================
-function onFormSubmit(e) {
-  try {
-    console.log('=== NOVA RESPOSTA RECEBIDA ===');
-    console.log('Timestamp:', new Date().toISOString());
-    
-    let responses = null;
-    let sheet = null;
-    
-    // Obtém dados da resposta
-    if (e && e.values && e.values.length > 0) {
-      console.log('Dados recebidos do evento:', e.values);
-      responses = e.values;
-      
-      // Tenta obter a planilha
-      const form = FormApp.getActiveForm();
-      if (form) {
-        const spreadsheetId = form.getDestinationId();
-        if (spreadsheetId) {
-          const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-          sheet = spreadsheet.getSheets()[0];
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>GPS Mecanizada - Registro de Uso</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 10px;
         }
-      }
-    } else {
-      console.log('Sem dados no evento, buscando última resposta da planilha...');
-      
-      // Fallback: pega última resposta da planilha
-      const form = FormApp.getActiveForm();
-      if (form) {
-        const spreadsheetId = form.getDestinationId();
-        if (spreadsheetId) {
-          const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-          sheet = spreadsheet.getSheets()[0];
-          const lastRow = sheet.getLastRow();
-          
-          if (lastRow > 1) {
-            responses = sheet.getRange(lastRow, 1, 1, sheet.getLastColumn()).getValues()[0];
-            console.log('Última resposta obtida da planilha:', responses);
-          }
+        .container {
+            max-width: 800px;
+            margin: 10px auto;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
         }
-      }
-    }
-    
-    if (!responses || responses.length === 0) {
-      console.log('Nenhuma resposta encontrada');
-      return;
-    }
-
-    if (!sheet) {
-      console.log('Não foi possível acessar a planilha');
-      return;
-    }
-    
-    // Obtém headers
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    console.log('Headers encontrados:', headers);
-    
-    // Processa dados com o novo método corrigido
-    const dadosRegistro = extrairDadosCorrigidos(responses, headers);
-    console.log('Dados extraídos:', dadosRegistro);
-    
-    // Gera texto formatado
-    const textoFormatado = gerarTextoCorportativoCorrigido(dadosRegistro);
-    console.log('Texto formatado gerado');
-    
-    // Cria ID único para esta resposta
-    const respostaId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    // Salva resposta individual
-    PropertiesService.getScriptProperties().setProperty(`resposta_${respostaId}`, JSON.stringify({
-      dados: dadosRegistro,
-      texto: textoFormatado,
-      criado: new Date().toISOString()
-    }));
-    
-    // Atualiza também a "última resposta"
-    PropertiesService.getScriptProperties().setProperty('ultimaResposta', JSON.stringify({
-      dados: dadosRegistro,
-      texto: textoFormatado,
-      processado: new Date().toISOString()
-    }));
-    
-    console.log('=== RESPOSTA PROCESSADA COM SUCESSO ===');
-    console.log('ID da resposta:', respostaId);
-    
-    // Limpa respostas antigas (mantém apenas as últimas 10)
-    limparRespostasAntigas();
-    
-  } catch (error) {
-    console.error('Erro no processamento:', error.toString());
-    console.error('Stack:', error.stack);
-  }
-}
-
-// =====================================================
-// FUNÇÃO doGet - OTIMIZADA PARA CHROME
-// =====================================================
-function doGet(e) {
-  try {
-    const callback = e.parameter.callback;
-    const respostaId = e.parameter.id;
-    const forceRefresh = e.parameter.refresh === 'true';
-    
-    console.log('Requisição recebida:', {
-      callback: callback,
-      id: respostaId,
-      refresh: forceRefresh,
-      timestamp: new Date().toISOString()
-    });
-    
-    let dados, texto;
-    
-    // Se tem ID específico, busca resposta específica
-    if (respostaId) {
-      const respostaEspecifica = PropertiesService.getScriptProperties().getProperty(`resposta_${respostaId}`);
-      
-      if (respostaEspecifica) {
-        const parsed = JSON.parse(respostaEspecifica);
-        dados = parsed.dados;
-        texto = parsed.texto;
-        console.log('Resposta específica encontrada:', respostaId);
-      }
-    }
-    
-    // Se não encontrou ou não tem ID, busca última resposta
-    if (!dados) {
-      const dadosSalvos = PropertiesService.getScriptProperties().getProperty('ultimaResposta');
-      
-      if (dadosSalvos) {
-        const parsed = JSON.parse(dadosSalvos);
-        dados = parsed.dados;
-        texto = parsed.texto;
-        console.log('Última resposta recuperada');
-      } else {
-        console.log('Nenhum dado salvo encontrado, tentando buscar da planilha...');
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 20px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .info-bar {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .info-item {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .info-item strong {
+            color: #2c3e50;
+            min-width: 100px;
+        }
+        .info-value {
+            font-weight: 600;
+            color: #2980b9;
+        }
+        .texto-container {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: #fafafa;
+            display: none;
+        }
+        .texto-header {
+            background: #34495e;
+            color: white;
+            padding: 15px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+        }
+        .texto-content {
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: white;
+            color: #2c3e50;
+            border-radius: 0 0 6px 6px;
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 15px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+            width: 100%;
+        }
+        .btn-primary {
+            background: #27ae60;
+            color: white;
+            font-size: 18px;
+            padding: 18px 20px;
+        }
+        .btn-primary:hover {
+            background: #229954;
+            transform: translateY(-1px);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+            background: #1e8449;
+        }
+        .btn-secondary {
+            background: #7f8c8d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #6c7a7b;
+        }
+        .success-message {
+            background: #d5edda;
+            color: #155724;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+            border-left: 4px solid #28a745;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+            border-left: 4px solid #dc3545;
+        }
+        .debug-panel {
+            background: #ffffcc;
+            border: 1px solid #ffcc00;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 11px;
+            display: none;
+        }
+        .footer {
+            background: #ecf0f1;
+            padding: 15px;
+            text-align: center;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
         
-        // Tenta buscar diretamente da planilha
-        const dadosPlanilha = buscarUltimaRespostaDaPlanilha();
-        if (dadosPlanilha) {
-          dados = dadosPlanilha.dados;
-          texto = dadosPlanilha.texto;
-          console.log('Dados obtidos da planilha');
+        /* Melhorias para mobile */
+        @media (max-width: 600px) {
+            body { padding: 5px; }
+            .container { margin: 5px auto; }
+            .content { padding: 15px; }
+            .header h1 { font-size: 20px; }
+            .info-item { 
+                flex-direction: column; 
+                align-items: flex-start; 
+                gap: 5px;
+            }
+            .info-item strong { min-width: auto; }
+            .btn { font-size: 16px; padding: 16px 15px; }
+            .btn-primary { font-size: 17px; padding: 18px 15px; }
+            .texto-content { 
+                font-size: 12px; 
+                padding: 15px;
+                max-height: 300px; 
+            }
         }
-      }
-    }
-    
-    // Prepara resposta JSON
-    const resposta = {
-      sucesso: !!dados && !!texto,
-      dados: dados || {},
-      texto: texto || '',
-      timestamp: new Date().toISOString(),
-      cacheBreaker: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-      version: '2.0'
-    };
-    
-    console.log('Enviando resposta:', {
-      sucesso: resposta.sucesso,
-      temDados: !!dados,
-      temTexto: !!texto
-    });
-    
-    // Para JSONP
-    if (callback) {
-      const jsonp = `${callback}(${JSON.stringify(resposta)})`;
-      return ContentService.createTextOutput(jsonp)
-        .setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
-    
-    // Para requisições JSON normais
-    return ContentService.createTextOutput(JSON.stringify(resposta))
-      .setMimeType(ContentService.MimeType.JSON);
-    
-  } catch (error) {
-    console.error('Erro no doGet:', error.toString());
-    console.error('Stack:', error.stack);
-    
-    const errorResponse = {
-      sucesso: false,
-      erro: 'Erro interno do servidor',
-      detalhes: error.toString(),
-      timestamp: new Date().toISOString(),
-      cacheBreaker: Date.now(),
-      version: '2.0'
-    };
-    
-    if (e.parameter.callback) {
-      const jsonp = `${e.parameter.callback}(${JSON.stringify(errorResponse)})`;
-      return ContentService.createTextOutput(jsonp)
-        .setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
-    
-    return ContentService.createTextOutput(JSON.stringify(errorResponse))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
 
-// =====================================================
-// EXTRAÇÃO DE DADOS CORRIGIDA - MAPEAMENTO CORRETO
-// =====================================================
-function extrairDadosCorrigidos(responses, headers) {
-  const dados = {
-    timestamp: responses[0] || new Date(),
-    tipoChecklist: '',
-    operacao: '',
-    placa: '',
-    veiculo: '',
-    responsavel: '',
-    dataHora: '',
-    km: '',
-    observacoes: '',
-    evidencias: ''
-  };
-  
-  console.log('=== INICIANDO EXTRAÇÃO DE DADOS ===');
-  console.log('Total de campos:', headers.length);
-  
-  // Mapeamento inteligente baseado em padrões comuns
-  for (let i = 0; i < headers.length; i++) {
-    const header = headers[i] || '';
-    const valor = responses[i] || '';
-    const headerLower = header.toLowerCase();
-    
-    if (valor && valor.toString().trim() !== '') {
-      const valorString = valor.toString().trim();
-      
-      console.log(`Campo ${i}: "${header}" = "${valorString}"`);
-      
-      // 1. TIPO DE CHECKLIST
-      if (headerLower.includes('tipo') && 
-          (headerLower.includes('checklist') || headerLower.includes('check'))) {
-        dados.tipoChecklist = valorString;
-        console.log('→ Tipo de Checklist identificado');
-      }
-      
-      // 2. OPERAÇÃO (Retirada/Devolução)
-      else if (headerLower.includes('retirada') || 
-               headerLower.includes('devolução') || 
-               headerLower.includes('devolucao') ||
-               headerLower.includes('operação') ||
-               headerLower.includes('operacao')) {
+        /* Melhoria da seleção de texto */
+        .texto-content {
+            -webkit-user-select: all;
+            -moz-user-select: all;
+            -ms-user-select: all;
+            user-select: all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>GPS MECANIZADA</h1>
+            <p>CONTROLE DE FROTA</p>
+        </div>
         
-        // Se o campo pergunta sobre retirada/devolução
-        if ((headerLower.includes('retirada') && headerLower.includes('devolução')) ||
-            (headerLower.includes('retirada') && headerLower.includes('devolucao'))) {
-          dados.operacao = valorString;
-          console.log('→ Operação identificada');
-        }
-      }
-      
-      // 3. PLACA E VEÍCULO
-      else if (headerLower.includes('placa') || 
-               headerLower.includes('veículo') || 
-               headerLower.includes('veiculo')) {
+        <div class="content">
+            <div class="loading" id="loading">
+                <div class="loading-spinner"></div>
+                <p>Carregando último registro...</p>
+                <small>Aguarde alguns segundos</small>
+            </div>
+            
+            <!-- Painel de Debug (oculto por padrão) -->
+            <div class="debug-panel" id="debugPanel"></div>
+            
+            <div id="conteudoPrincipal" style="display: none;">
+                <div class="info-bar" id="infoBar">
+                    <div class="info-item">
+                        <strong>Placa:</strong>
+                        <span class="info-value" id="placaInfo">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Veículo:</strong>
+                        <span class="info-value" id="veiculoInfo">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Responsável:</strong>
+                        <span class="info-value" id="responsavelInfo">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Tipo:</strong>
+                        <span class="info-value" id="operacaoInfo">-</span>
+                    </div>
+                </div>
+                
+                <div class="texto-container" id="textoContainer">
+                    <div class="texto-header">
+                        MENSAGEM PRONTA PARA WHATSAPP
+                    </div>
+                    <div class="texto-content" id="textoParaCopiar" onclick="selecionarTudo()"></div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="copiarTexto()">
+                        📋 COPIAR MENSAGEM
+                    </button>
+                    
+                    <button class="btn btn-secondary" onclick="atualizarDados()">
+                        🔄 ATUALIZAR DADOS
+                    </button>
+                </div>
+                
+                <div id="mensagemSucesso" class="success-message"></div>
+                
+                <div id="mensagemErro" class="error-message">
+                    <strong>Nenhum registro encontrado</strong><br>
+                    Preencha o formulário primeiro e aguarde alguns minutos para o processamento.
+                </div>
+            </div>
+        </div>
         
-        // Extrai placa usando regex
-        const placaRegex = /([A-Z]{3}[-]?\d{4})/i;
-        const matchPlaca = valorString.match(placaRegex);
+        <div class="footer">
+            Sistema GrupoGPS Mecanizada • Atualizado automaticamente
+        </div>
+    </div>
+
+    <script>
+        // URL do seu Google Apps Script
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxIR0pJsw9VHdSGa8IYs7DZeJEe0e7WHBdokcLEbHascBdjhXv10yxVWdx6zq8hBXuc/exec';
         
-        if (matchPlaca) {
-          dados.placa = matchPlaca[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
-          console.log('→ Placa extraída:', dados.placa);
-          
-          // Extrai modelo do veículo (o que vem depois da placa)
-          const textoAposPlaca = valorString.substring(valorString.indexOf(matchPlaca[0]) + matchPlaca[0].length);
-          const modelo = textoAposPlaca.replace(/^[\s-]+/, '').trim();
-          
-          if (modelo && modelo.length > 1) {
-            dados.veiculo = modelo;
-            console.log('→ Veículo extraído:', dados.veiculo);
-          }
+        // Detecta se é dispositivo móvel
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+        
+        // Ativa modo debug se necessário (adicione ?debug=true na URL)
+        const urlParams = new URLSearchParams(window.location.search);
+        const debugMode = urlParams.get('debug') === 'true';
+        
+        function log(message, data) {
+            console.log(message, data || '');
+            if (debugMode) {
+                const panel = document.getElementById('debugPanel');
+                panel.style.display = 'block';
+                panel.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message} ${data ? JSON.stringify(data) : ''}</div>`;
+            }
         }
-        // Se não tem placa mas tem texto, pode ser só o modelo
-        else if (!dados.veiculo && valorString.length > 2) {
-          dados.veiculo = valorString;
-          console.log('→ Veículo (sem placa) identificado');
+        
+        // FUNÇÃO PRINCIPAL DE CARREGAR DADOS
+        function carregarDados() {
+            try {
+                log('Iniciando carregamento... Chrome: ' + isChrome + ', Mobile: ' + isMobile);
+                
+                // Mostra loading
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('conteudoPrincipal').style.display = 'none';
+                
+                // Remove script anterior se existir
+                const scriptAnterior = document.getElementById('jsonp-script');
+                if (scriptAnterior) {
+                    scriptAnterior.remove();
+                }
+                
+                // Cache busting melhorado para Chrome
+                const timestamp = Date.now();
+                const randomId = Math.random().toString(36).substr(2, 9);
+                const sessionId = 'sess_' + timestamp + '_' + randomId;
+                
+                // Cria callback único
+                const callbackName = 'callback_' + sessionId;
+                
+                // Define callback global
+                window[callbackName] = function(resposta) {
+                    log('Resposta recebida:', resposta);
+                    
+                    try {
+                        if (resposta.sucesso && resposta.texto) {
+                            // Processa e corrige os dados
+                            const dadosCorrigidos = corrigirDados(resposta);
+                            exibirDados(dadosCorrigidos);
+                        } else {
+                            log('Nenhum dado encontrado');
+                            mostrarErro();
+                        }
+                    } catch (parseError) {
+                        log('Erro ao processar resposta:', parseError.toString());
+                        mostrarErro();
+                    }
+                    
+                    // Limpa callback e script
+                    setTimeout(() => {
+                        try {
+                            delete window[callbackName];
+                            const scriptElement = document.getElementById('jsonp-script');
+                            if (scriptElement && scriptElement.parentNode) {
+                                scriptElement.parentNode.removeChild(scriptElement);
+                            }
+                        } catch (cleanupError) {
+                            log('Erro na limpeza:', cleanupError.toString());
+                        }
+                    }, 100);
+                };
+                
+                // URL com parâmetros extras para evitar cache no Chrome
+                let url = `${SCRIPT_URL}?callback=${callbackName}`;
+                url += `&t=${timestamp}`;
+                url += `&r=${randomId}`;
+                url += `&s=${sessionId}`;
+                
+                // Adiciona parâmetro específico para Chrome mobile
+                if (isChrome && isMobile) {
+                    url += `&cm=1`;
+                    url += `&_=${Date.now()}`;
+                }
+                
+                log('URL da requisição:', url);
+                
+                // Cria script JSONP
+                const script = document.createElement('script');
+                script.id = 'jsonp-script';
+                script.src = url;
+                script.type = 'text/javascript';
+                script.async = true;
+                
+                // Adiciona atributos para evitar cache
+                script.setAttribute('data-timestamp', timestamp);
+                
+                script.onerror = function(e) {
+                    log('Erro ao carregar script JSONP', e);
+                    mostrarErro();
+                    if (window[callbackName]) {
+                        delete window[callbackName];
+                    }
+                };
+                
+                script.onload = function() {
+                    log('Script JSONP carregado com sucesso');
+                };
+                
+                // Adiciona o script ao documento
+                document.body.appendChild(script);
+                
+                // Timeout de segurança (maior para mobile)
+                setTimeout(() => {
+                    if (document.getElementById('loading').style.display !== 'none') {
+                        log('Timeout - forçando exibição de erro');
+                        mostrarErro();
+                        if (window[callbackName]) {
+                            delete window[callbackName];
+                        }
+                        const scriptElement = document.getElementById('jsonp-script');
+                        if (scriptElement && scriptElement.parentNode) {
+                            scriptElement.parentNode.removeChild(scriptElement);
+                        }
+                    }
+                }, isMobile ? 20000 : 15000);
+                
+            } catch (error) {
+                log('Erro geral ao carregar dados:', error.toString());
+                mostrarErro();
+            }
         }
-      }
-      
-      // 4. RESPONSÁVEL
-      else if (headerLower.includes('responsável') || 
-               headerLower.includes('responsavel') ||
-               headerLower.includes('nome') ||
-               headerLower.includes('motorista')) {
-        dados.responsavel = valorString;
-        console.log('→ Responsável identificado');
-      }
-      
-      // 5. DATA E HORA
-      else if (headerLower.includes('data') || headerLower.includes('hora')) {
-        // Verifica se é uma data válida
-        if (valorString.includes('/') || valorString.includes('-') || 
-            valorString.includes(':') || !isNaN(Date.parse(valorString))) {
-          dados.dataHora = valorString;
-          console.log('→ Data/Hora identificada');
+        
+        // FUNÇÃO PARA CORRIGIR OS DADOS TROCADOS
+        function corrigirDados(resposta) {
+            const texto = resposta.texto;
+            const dados = resposta.dados || {};
+            
+            // Cria objeto com dados corrigidos
+            const dadosCorrigidos = {
+                texto: texto,
+                placa: '',
+                veiculo: '',
+                responsavel: '',
+                operacao: '',
+                dataHora: '',
+                km: ''
+            };
+            
+            // Analisa o texto linha por linha para extrair os dados corretos
+            const linhas = texto.split('\n');
+            
+            for (const linha of linhas) {
+                const linhaTrim = linha.trim();
+                
+                // Extrai OPERAÇÃO (Retirada/Devolução)
+                if (linhaTrim.includes('CHECKLIST - RETIRADA')) {
+                    dadosCorrigidos.operacao = 'Retirada';
+                } else if (linhaTrim.includes('CHECKLIST - DEVOLUCAO') || linhaTrim.includes('CHECKLIST - DEVOLUÇÃO')) {
+                    dadosCorrigidos.operacao = 'Devolução';
+                } else if (linhaTrim.includes('OPERACAO:')) {
+                    const valor = linhaTrim.split('OPERACAO:')[1]?.trim();
+                    // Verifica se o valor contém placa (padrão XXX-9999)
+                    const placaRegex = /([A-Z]{3}[-]?\d{4})/i;
+                    const match = valor?.match(placaRegex);
+                    if (match) {
+                        // Está trocado - o que está em OPERACAO é na verdade a placa
+                        dadosCorrigidos.placa = match[0].toUpperCase();
+                        // Extrai o veículo (parte após o hífen)
+                        const partes = valor.split('-');
+                        if (partes.length > 1) {
+                            dadosCorrigidos.veiculo = partes.slice(1).join('-').trim();
+                        }
+                    } else {
+                        dadosCorrigidos.operacao = valor || dadosCorrigidos.operacao;
+                    }
+                }
+                
+                // Extrai PLACA
+                if (linhaTrim.includes('PLACA:')) {
+                    const valor = linhaTrim.split('PLACA:')[1]?.trim();
+                    // Verifica se é uma placa válida ou está trocado
+                    if (valor && !valor.includes('GMT') && !valor.includes('BRT')) {
+                        dadosCorrigidos.placa = valor;
+                    }
+                }
+                
+                // Extrai VEÍCULO
+                if (linhaTrim.includes('VEICULO:')) {
+                    const valor = linhaTrim.split('VEICULO:')[1]?.trim();
+                    // Verifica se não é uma data/hora
+                    if (valor && !valor.includes('GMT') && !valor.includes('Standard Time')) {
+                        dadosCorrigidos.veiculo = valor;
+                    }
+                }
+                
+                // Extrai RESPONSÁVEL
+                if (linhaTrim.includes('RESPONSAVEL:')) {
+                    dadosCorrigidos.responsavel = linhaTrim.split('RESPONSAVEL:')[1]?.trim() || '';
+                }
+                
+                // Extrai DATA/HORA
+                if (linhaTrim.includes('DATA/HORA:')) {
+                    dadosCorrigidos.dataHora = linhaTrim.split('DATA/HORA:')[1]?.trim() || '';
+                }
+                
+                // Extrai KM
+                if (linhaTrim.includes('KM:')) {
+                    dadosCorrigidos.km = linhaTrim.split('KM:')[1]?.trim() || '';
+                }
+                
+                // Extrai TIPO
+                if (linhaTrim.includes('TIPO:')) {
+                    const tipo = linhaTrim.split('TIPO:')[1]?.trim();
+                    if (tipo && !dadosCorrigidos.operacao) {
+                        dadosCorrigidos.operacao = tipo;
+                    }
+                }
+            }
+            
+            // Se ainda não temos operação, tenta determinar pelo contexto
+            if (!dadosCorrigidos.operacao) {
+                if (texto.includes('RETIRADA')) {
+                    dadosCorrigidos.operacao = 'Retirada';
+                } else if (texto.includes('DEVOLUÇÃO') || texto.includes('DEVOLUCAO')) {
+                    dadosCorrigidos.operacao = 'Devolução';
+                } else {
+                    dadosCorrigidos.operacao = 'Registro de Uso';
+                }
+            }
+            
+            // Reconstrói o texto com os dados corrigidos
+            let textoCorrigido = `GPS MECANIZADA - CONTROLE DE FROTA\n`;
+            
+            if (dadosCorrigidos.operacao === 'Retirada') {
+                textoCorrigido += `CHECKLIST - RETIRADA\n`;
+            } else if (dadosCorrigidos.operacao === 'Devolução') {
+                textoCorrigido += `CHECKLIST - DEVOLUÇÃO\n`;
+            } else {
+                textoCorrigido += `REGISTRO DE USO\n`;
+            }
+            
+            textoCorrigido += `================================\n\n`;
+            
+            if (dadosCorrigidos.operacao && dadosCorrigidos.operacao !== 'Retirada' && dadosCorrigidos.operacao !== 'Devolução') {
+                textoCorrigido += `TIPO: ${dadosCorrigidos.operacao}\n`;
+            }
+            
+            textoCorrigido += `PLACA: ${dadosCorrigidos.placa || 'N/I'}\n`;
+            
+            if (dadosCorrigidos.veiculo) {
+                textoCorrigido += `VEÍCULO: ${dadosCorrigidos.veiculo}\n`;
+            }
+            
+            textoCorrigido += `RESPONSÁVEL: ${dadosCorrigidos.responsavel || 'N/I'}\n`;
+            
+            if (dadosCorrigidos.dataHora) {
+                textoCorrigido += `DATA/HORA: ${dadosCorrigidos.dataHora}\n`;
+            }
+            
+            if (dadosCorrigidos.km) {
+                textoCorrigido += `KM: ${dadosCorrigidos.km}\n`;
+            }
+            
+            textoCorrigido += `\n================================\n`;
+            
+            // Extrai a data de registro do texto original
+            for (const linha of linhas) {
+                if (linha.includes('REGISTRADO:')) {
+                    textoCorrigido += linha + '\n';
+                    break;
+                }
+            }
+            
+            textoCorrigido += `GrupoGPS Mecanizada`;
+            
+            dadosCorrigidos.texto = textoCorrigido;
+            
+            log('Dados corrigidos:', dadosCorrigidos);
+            
+            return dadosCorrigidos;
         }
-      }
-      
-      // 6. KM/QUILOMETRAGEM
-      else if (headerLower.includes('km') || 
-               headerLower.includes('quilometragem') || 
-               headerLower.includes('odômetro') ||
-               headerLower.includes('odometro')) {
-        // Remove caracteres não numéricos
-        const kmNumerico = valorString.replace(/[^0-9]/g, '');
-        if (kmNumerico) {
-          dados.km = kmNumerico;
-          console.log('→ KM identificado');
+        
+        // FUNÇÃO PARA EXIBIR OS DADOS
+        function exibirDados(dados) {
+            // Atualiza interface
+            document.getElementById('placaInfo').textContent = dados.placa || 'N/I';
+            document.getElementById('veiculoInfo').textContent = dados.veiculo || 'N/I';
+            document.getElementById('responsavelInfo').textContent = dados.responsavel || 'N/I';
+            document.getElementById('operacaoInfo').textContent = dados.operacao || 'N/I';
+            document.getElementById('textoParaCopiar').textContent = dados.texto;
+            
+            // Mostra conteúdo
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('conteudoPrincipal').style.display = 'block';
+            document.getElementById('infoBar').style.display = 'block';
+            document.getElementById('textoContainer').style.display = 'block';
+            document.getElementById('mensagemErro').style.display = 'none';
         }
-      }
-      
-      // 7. OBSERVAÇÕES
-      else if (headerLower.includes('observação') || 
-               headerLower.includes('observacao') ||
-               headerLower.includes('observações') ||
-               headerLower.includes('observacoes') ||
-               headerLower.includes('comentário') ||
-               headerLower.includes('comentario')) {
-        dados.observacoes = valorString;
-        console.log('→ Observações identificadas');
-      }
-      
-      // 8. EVIDÊNCIAS
-      else if (headerLower.includes('evidência') || 
-               headerLower.includes('evidencia') ||
-               headerLower.includes('foto') ||
-               headerLower.includes('imagem') ||
-               headerLower.includes('anexo')) {
-        dados.evidencias = valorString;
-        console.log('→ Evidências identificadas');
-      }
-    }
-  }
-  
-  // Validações e correções finais
-  
-  // Se não identificou operação pelo campo específico, tenta inferir
-  if (!dados.operacao && dados.tipoChecklist) {
-    if (dados.tipoChecklist.toLowerCase().includes('retirada')) {
-      dados.operacao = 'Retirada';
-    } else if (dados.tipoChecklist.toLowerCase().includes('devolução') || 
-               dados.tipoChecklist.toLowerCase().includes('devolucao')) {
-      dados.operacao = 'Devolução';
-    }
-  }
-  
-  // Formata a placa corretamente (XXX-9999)
-  if (dados.placa && dados.placa.length === 7 && !dados.placa.includes('-')) {
-    dados.placa = dados.placa.substring(0, 3) + '-' + dados.placa.substring(3);
-  }
-  
-  console.log('=== DADOS EXTRAÍDOS FINAL ===');
-  console.log(dados);
-  
-  return dados;
-}
-
-// =====================================================
-// GERAR TEXTO CORPORATIVO CORRIGIDO
-// =====================================================
-function gerarTextoCorportativoCorrigido(dados) {
-  let texto = `GPS MECANIZADA - CONTROLE DE FROTA\n`;
-  
-  // Determina o tipo de registro baseado na operação
-  if (dados.operacao === 'Retirada' || 
-      (dados.tipoChecklist && dados.tipoChecklist.toLowerCase().includes('retirada'))) {
-    texto += `CHECKLIST - RETIRADA\n`;
-  } else if (dados.operacao === 'Devolução' || 
-             dados.operacao === 'Devolucao' ||
-             (dados.tipoChecklist && (dados.tipoChecklist.toLowerCase().includes('devolução') || 
-                                       dados.tipoChecklist.toLowerCase().includes('devolucao')))) {
-    texto += `CHECKLIST - DEVOLUÇÃO\n`;
-  } else {
-    texto += `REGISTRO DE USO\n`;
-  }
-  
-  texto += `================================\n\n`;
-  
-  // Adiciona tipo se for diferente da operação principal
-  if (dados.tipoChecklist && 
-      !dados.tipoChecklist.toLowerCase().includes('retirada') && 
-      !dados.tipoChecklist.toLowerCase().includes('devolução') &&
-      !dados.tipoChecklist.toLowerCase().includes('devolucao')) {
-    texto += `TIPO: ${dados.tipoChecklist}\n`;
-  }
-  
-  // Placa
-  if (dados.placa) {
-    texto += `PLACA: ${dados.placa}\n`;
-  } else {
-    texto += `PLACA: N/I\n`;
-  }
-  
-  // Veículo
-  if (dados.veiculo) {
-    texto += `VEÍCULO: ${dados.veiculo}\n`;
-  }
-  
-  // Responsável
-  if (dados.responsavel) {
-    texto += `RESPONSÁVEL: ${dados.responsavel}\n`;
-  } else {
-    texto += `RESPONSÁVEL: N/I\n`;
-  }
-  
-  // Data/Hora
-  if (dados.dataHora) {
-    const dataFormatada = formatarDataHoraBR(dados.dataHora);
-    texto += `DATA/HORA: ${dataFormatada}\n`;
-  }
-  
-  // KM
-  if (dados.km) {
-    texto += `KM: ${dados.km}\n`;
-  }
-  
-  // Observações
-  if (dados.observacoes && dados.observacoes.trim().length > 0) {
-    texto += `\nOBSERVAÇÕES:\n${dados.observacoes}\n`;
-  }
-  
-  // Evidências
-  if (dados.evidencias && dados.evidencias.trim().length > 0) {
-    texto += `\nEVIDÊNCIAS: Anexadas\n`;
-  }
-  
-  texto += `\n================================\n`;
-  texto += `REGISTRADO: ${formatarDataHoraBR(dados.timestamp)}\n`;
-  texto += `GrupoGPS Mecanizada`;
-  
-  return texto;
-}
-
-// =====================================================
-// FUNÇÕES AUXILIARES
-// =====================================================
-
-function formatarDataHoraBR(dataInput) {
-  try {
-    let date;
-    
-    // Se já é uma data
-    if (dataInput instanceof Date) {
-      date = dataInput;
-    }
-    // Se é string
-    else if (typeof dataInput === 'string') {
-      // Remove timezone info se houver
-      const dataLimpa = dataInput.replace(/\s*\(.*?\)\s*/, '').trim();
-      date = new Date(dataLimpa);
-    }
-    // Tenta converter
-    else {
-      date = new Date(dataInput);
-    }
-    
-    // Se a data é válida
-    if (!isNaN(date.getTime())) {
-      const dia = String(date.getDate()).padStart(2, '0');
-      const mes = String(date.getMonth() + 1).padStart(2, '0');
-      const ano = date.getFullYear();
-      const hora = String(date.getHours()).padStart(2, '0');
-      const minuto = String(date.getMinutes()).padStart(2, '0');
-      
-      return `${dia}/${mes}/${ano}, ${hora}:${minuto}`;
-    }
-    
-    // Se não conseguiu converter, retorna como está
-    return dataInput.toString();
-    
-  } catch (e) {
-    console.error('Erro ao formatar data:', e);
-    return dataInput.toString();
-  }
-}
-
-// Busca última resposta diretamente da planilha
-function buscarUltimaRespostaDaPlanilha() {
-  try {
-    const form = FormApp.getActiveForm();
-    if (!form) return null;
-    
-    const spreadsheetId = form.getDestinationId();
-    if (!spreadsheetId) return null;
-    
-    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheets()[0];
-    const lastRow = sheet.getLastRow();
-    
-    if (lastRow <= 1) return null;
-    
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const responses = sheet.getRange(lastRow, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    const dados = extrairDadosCorrigidos(responses, headers);
-    const texto = gerarTextoCorportativoCorrigido(dados);
-    
-    return { dados, texto };
-    
-  } catch (error) {
-    console.error('Erro ao buscar da planilha:', error);
-    return null;
-  }
-}
-
-// Limpa respostas antigas (mantém apenas as últimas 10)
-function limparRespostasAntigas() {
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const keys = props.getKeys();
-    
-    // Filtra apenas as chaves de respostas individuais
-    const respostaKeys = keys.filter(k => k.startsWith('resposta_')).sort();
-    
-    // Se tem mais de 10, remove as mais antigas
-    if (respostaKeys.length > 10) {
-      const keysParaRemover = respostaKeys.slice(0, respostaKeys.length - 10);
-      keysParaRemover.forEach(key => {
-        props.deleteProperty(key);
-        console.log('Resposta antiga removida:', key);
-      });
-    }
-  } catch (error) {
-    console.error('Erro ao limpar respostas antigas:', error);
-  }
-}
-
-// =====================================================
-// FUNÇÃO DE TESTE MANUAL
-// =====================================================
-function testarProcessamento() {
-  // Simula o último registro real baseado na planilha fornecida
-  const respostaTeste = {
-    values: [
-      new Date('2025-09-04 15:51:21'), // Timestamp
-      '', // Campo vazio
-      'Registro de Uso', // Tipo
-      '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-      'Genésio Adão Miranda', // Responsável
-      'Devolução', // Operação  
-      'TEX-4C06 - SAVEIRO', // Placa e Veículo
-      '04/09/2025 15:51:00', // Data/Hora
-      'Sem anormalidade' // Observações
-    ]
-  };
-  
-  // Headers baseados na planilha
-  const headers = [
-    'Carimbo de data/hora', '', 'Tipo de Checklist',
-    // Muitos campos vazios...
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    'Responsável pela Operação',
-    'Retirada ou Devolução do Veículo',  
-    'Placa do Veículo',
-    'Data e Hora da Operação',
-    'Observações'
-  ];
-  
-  const dados = extrairDadosCorrigidos(respostaTeste.values, headers);
-  const texto = gerarTextoCorportativoCorrigido(dados);
-  
-  console.log('=== TESTE DE PROCESSAMENTO ===');
-  console.log('Dados extraídos:', dados);
-  console.log('Texto gerado:\n', texto);
-  
-  // Salva como última resposta para teste
-  PropertiesService.getScriptProperties().setProperty('ultimaResposta', JSON.stringify({
-    dados: dados,
-    texto: texto,
-    processado: new Date().toISOString(),
-    teste: true
-  }));
-  
-  console.log('✅ Teste salvo como última resposta');
-  
-  return { dados, texto };
-}
+        
+        function mostrarErro() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('conteudoPrincipal').style.display = 'block';
+            document.getElementById('mensagemErro').style.display = 'block';
+            document.getElementById('infoBar').style.display = 'none';
+            document.getElementById('textoContainer').style.display = 'none';
+        }
+        
+        function copiarTexto() {
+            const texto = document.getElementById('textoParaCopiar').textContent;
+            
+            if (!texto || texto.trim() === '') {
+                alert('Nenhum texto para copiar');
+                return;
+            }
+            
+            // Tenta copiar usando a API moderna primeiro
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(texto).then(() => {
+                    mostrarSucesso();
+                }).catch(err => {
+                    log('Erro ao copiar (clipboard API):', err.toString());
+                    copiarTextoFallback(texto);
+                });
+            } else {
+                copiarTextoFallback(texto);
+            }
+        }
+        
+        function copiarTextoFallback(texto) {
+            const textArea = document.createElement('textarea');
+            textArea.value = texto;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    mostrarSucesso();
+                } else {
+                    throw new Error('Comando copy falhou');
+                }
+            } catch (err) {
+                log('Erro no fallback de cópia:', err.toString());
+                if (isMobile) {
+                    alert('Texto selecionado! Toque e segure na área de texto e escolha "Copiar"');
+                    selecionarTudo();
+                } else {
+                    alert('Selecione o texto manualmente e pressione Ctrl+C');
+                }
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+        
+        function mostrarSucesso() {
+            const mensagem = document.getElementById('mensagemSucesso');
+            
+            if (isMobile) {
+                mensagem.innerHTML = '✅ <strong>MENSAGEM COPIADA!</strong><br>Abra o WhatsApp e cole a mensagem no grupo';
+            } else {
+                mensagem.innerHTML = '✅ <strong>MENSAGEM COPIADA!</strong><br>Cole no grupo do WhatsApp';
+            }
+            
+            mensagem.style.display = 'block';
+            
+            setTimeout(() => {
+                mensagem.style.display = 'none';
+            }, 5000);
+        }
+        
+        function selecionarTudo() {
+            const elemento = document.getElementById('textoParaCopiar');
+            if (elemento) {
+                if (window.getSelection && document.createRange) {
+                    const range = document.createRange();
+                    range.selectNodeContents(elemento);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } else if (document.body.createTextRange) {
+                    const range = document.body.createTextRange();
+                    range.moveToElementText(elemento);
+                    range.select();
+                }
+            }
+        }
+        
+        function atualizarDados() {
+            document.getElementById('mensagemErro').style.display = 'none';
+            document.getElementById('mensagemSucesso').style.display = 'none';
+            
+            // Força limpeza de cache no Chrome
+            if (isChrome) {
+                // Adiciona um pequeno delay e recarrega
+                setTimeout(() => {
+                    carregarDados();
+                }, 300);
+            } else {
+                carregarDados();
+            }
+        }
+        
+        // Carrega dados quando a página abre
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Página carregada. Chrome: ' + isChrome + ', Mobile: ' + isMobile);
+            
+            // Adiciona listener de toque para mobile
+            if (isMobile) {
+                const textoElement = document.getElementById('textoParaCopiar');
+                if (textoElement) {
+                    textoElement.addEventListener('touchstart', function(e) {
+                        // Previne comportamento padrão apenas se necessário
+                        if (isChrome) {
+                            setTimeout(selecionarTudo, 100);
+                        } else {
+                            selecionarTudo();
+                        }
+                    });
+                }
+            }
+            
+            // Carrega os dados
+            carregarDados();
+        });
+        
+        // Adiciona listener para visibility change (útil quando o app volta do background no mobile)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && isMobile && isChrome) {
+                log('App voltou ao foco (Chrome Mobile) - recarregando...');
+                setTimeout(carregarDados, 500);
+            }
+        });
+    </script>
+</body>
+</html>
